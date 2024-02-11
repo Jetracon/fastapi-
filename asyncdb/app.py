@@ -19,7 +19,7 @@ DB_HOST = "localhost"
 # https://keepforyourself.com/databases/mysql/how-to-install-mysql-on-your-linux-system/
 DATABASE = "playground"
 
-engine = create_engine(f"mysql+pymysql://root:!_zubast444ik-_9204924-MYSQL24242_242424zubastik_!@{DB_HOST}/{DATABASE}")
+engine = create_engine(f"mysql+pymysql://root:№№№@{DB_HOST}/{DATABASE}")
 DBSession = Session(engine)
 
 DB_BASE_ORM = declarative_base()
