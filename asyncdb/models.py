@@ -1,6 +1,10 @@
 from sqlalchemy import Column, Integer, String, Float, Boolean
 
-from asyncdb.db import Base
+from sqlalchemy.orm import declarative_base
+from sqlalchemy import Column, Integer, String
+
+Base = declarative_base()
+
 
 
 class ProductModel(Base):
@@ -10,3 +14,6 @@ class ProductModel(Base):
     name = Column(String(100), index=True)
     price = Column(Float)
     is_18_plus = Column(Boolean, default=False)
+
+
+

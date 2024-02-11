@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime
 from typing import List
 
-from fastapi import FastAPI, Depends, Query
+from fastapi import FastAPI, Depends, Query, HTTPException
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,3 +70,46 @@ async def create_product(product_payload: ProductPayload, db: AsyncSession = Dep
         await session.commit()
         await session.refresh(db_product)
         return db_product
+# PUT Endpoint: Update an existing product by ID
+@app.put("/products/{product_id}", response_model=Product)
+async def update_product(product_id: int, product_payload: ProductPayload, db: AsyncSession = Depends(get_db)):
+    async with db.begin():
+        db_product = await db.execute(select(ProductModel).filter(ProductModel.id == product_id))
+        db_product = db_product.scalars().first()
+
+        if db_product is None:
+            raise HTTPException(status_code=404, detail="Product not found")
+
+        for key, value in product_payload.dict().items():
+            setattr(db_product, key, value)
+
+        await db.commit()
+        await db.refresh(db_product)
+
+    return db_product
+
+# GET Single Product Endpoint: Retrieve details of a single product by ID
+@app.get("/products/{product_id}", response_model=Product)
+async def read_product(product_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(ProductModel).filter(ProductModel.id == product_id))
+    product = result.scalars().first()
+
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    return product
+
+# DELETE Endpoint: Delete a product by ID
+@app.delete("/products/{product_id}", response_model=Product)
+async def delete_product(product_id: int, db: AsyncSession = Depends(get_db)):
+    async with db.begin():
+        db_product = await db.execute(select(ProductModel).filter(ProductModel.id == product_id))
+        db_product = db_product.scalars().first()
+
+        if db_product is None:
+            raise HTTPException(status_code=404, detail="Product not found")
+
+        db.delete(db_product)
+        await db.commit()
+
+    return db_product

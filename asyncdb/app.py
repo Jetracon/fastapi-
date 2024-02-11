@@ -1,57 +1,80 @@
-from http.client import HTTPException
-from typing import Optional
-from pydantic import BaseModel
-from fastapi import FastAPI, Request, Response, status, Depends
-# declarative_base class, Column, Integer and String
-# will all be used for the race_car table model
+from databases import Database
+from fastapi import FastAPI, Depends, HTTPException
+from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_session
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import create_engine, Column, Integer, String
-# Session will be used together wiith create_engine
-# for the connection session
-from sqlalchemy.orm import Session
-from pydantic_models import ProductPayload
-from . import crud, models, database
-# my database is on the same machine
-# you should change the localhost with the IP of
-# your database
-DB_HOST = "localhost"
-# the database we created in the previous article
-# https://keepforyourself.com/databases/mysql/how-to-install-mysql-on-your-linux-system/
-DATABASE = "playground"
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import select
+from models import ProductModel
+SQLALCHEMY_DATABASE_URL = "mysql+asyncmy://root:!_zubast444ik-_9204924-MYSQL24242_242424zubastik_!@localhost/hillelfastapi"
 
-engine = create_engine(f"mysql+pymysql://root:№№№@{DB_HOST}/{DATABASE}")
-DBSession = Session(engine)
+engine = create_async_engine(SQLALCHEMY_DATABASE_URL, echo=True)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=AsyncSession)
+app = FastAPI()
+Base = declarative_base()
 
-DB_BASE_ORM = declarative_base()
-
-app = FastAPI(
-    title="Example-02-CRUD-part-2",
-    description="keep-4-yourself-example-03",
-)
-
-@app.put("/products/{product_id}")
-def update_product(product_id: int, product_update: ProductPayload, db: Session = Depends(database.get_db)):
-    db_product = crud.get_product(db, product_id)
-    if db_product is None:
-        raise HTTPException(status_code=404, detail="Product not found")
-
-    return crud.update_product(db, db_product, product_update)
+database = Database(SQLALCHEMY_DATABASE_URL)
 
 
-@app.delete("/products/{product_id}")
-def delete_product(product_id: int, db: Session = Depends(database.get_db)):
-    db_product = crud.get_product(db, product_id)
-    if db_product is None:
-        raise HTTPException(status_code=404, detail="Product not found")
+# Dependency to get async database session
+async def get_db() -> AsyncSession:
+    async with async_session() as session:
+        yield session
 
-    crud.delete_product(db, db_product)
-    return {"message": "Product successfully deleted"}
+async def create_product(db: AsyncSession, product_payload: ProductModel) -> ProductModel:
+    product = ProductModel(**product_payload.dict())
+    db.add(product)
+    await db.commit()
+    await db.refresh(product)
+    return product
 
+async def get_product_by_id(db: AsyncSession, product_id: int) -> ProductModel:
+    result = await db.execute(select(ProductModel).filter(ProductModel.id == product_id))
+    product = result.scalars().first()
+    return product
 
-@app.get("/products/{product_id}")
-def read_product(product_id: int, db: Session = Depends(database.get_db)):
-    db_product = crud.get_product(db, product_id)
-    if db_product is None:
-        raise HTTPException(status_code=404, detail="Product not found")
+async def update_product(db: AsyncSession, product_id: int, product_payload: ProductModel) -> ProductModel:
+    db_product = await get_product_by_id(db, product_id)
+
+    if db_product:
+        for key, value in product_payload.dict().items():
+            setattr(db_product, key, value)
+
+        await db.commit()
+        await db.refresh(db_product)
 
     return db_product
+
+async def delete_product(db: AsyncSession, product_id: int) -> ProductModel:
+    db_product = await get_product_by_id(db, product_id)
+
+    if db_product:
+        db.delete(db_product)
+        await db.commit()
+
+    return db_product
+
+@app.post("/products", response_model=ProductModel)
+async def create_product_endpoint(product_payload: ProductModel, db: AsyncSession = Depends(get_db)):
+    return await create_product(db, product_payload)
+
+@app.get("/products/{product_id}", response_model=ProductModel)
+async def read_product_endpoint(product_id: int, db: AsyncSession = Depends(get_db)):
+    product = await get_product_by_id(db, product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return product
+
+@app.put("/products/{product_id}", response_model=ProductModel)
+async def update_product_endpoint(product_id: int, product_payload: ProductModel, db: AsyncSession = Depends(get_db)):
+    updated_product = await update_product(db, product_id, product_payload)
+    if not updated_product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return updated_product
+
+@app.delete("/products/{product_id}", response_model=ProductModel)
+async def delete_product_endpoint(product_id: int, db: AsyncSession = Depends(get_db)):
+    deleted_product = await delete_product(db, product_id)
+    if not deleted_product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return deleted_product
